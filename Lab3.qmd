@@ -1,0 +1,116 @@
+---
+title: "Project 3: Factor Modeling of Yield Curves"
+author: "Hyekyung Min"
+date: "2023-08-02"
+format: html
+editor: visual
+execute:
+  warning: false
+---
+
+### Learning Objectives
+
+1.  Understand the mathematical principles and terminology employed in Principal Component Analysis (PCA).
+
+2.  Apply PCA to extract factors from U.S. Treasury yields and estimate factor loadings and variance explained.
+
+3.  Interpret PCA results for economic significance and compare with the Nelson-Siegel model.
+
+### Understanding Yield Curves via Factor Models
+
+Treasury yields are great for factor modeling due to their high collinearity and shared underlying factors such as interest rates and economic conditions. Factor modeling simplifies analysis, reduced dimensionality, and identifies key yield drivers, helping us understand and manage interest rate risk while extracting common factors.
+
+In our initial modeling phase, we analyze historical yield data, seeking patterns and correlations among maturities that could indicate common shared factors. We also compute yield change correlations across maturities. Strong correlations suggest the potential effectiveness of factor models for yield curves.
+
+The first-order yield difference is used to establish stationarity in time series yield data by subtracting the previous yield rate from each one. Stationarity implies statistical properties such as mean and standard deviation do not vary over time. Having stationary data make it easier to detect patterns in times series data.
+
+> 1.  Load the U.S. Treasury yield rate time series from Quandl and compute daily first-order yield differences for maturities of 3 months, 6 months, 1 year, 2 years, 3 years, 5 years, 7 years, 10 years and 20 years over the time period of 2010-2019.
+>
+> 2.  Find the average and standard deviation of daily yield differences for the specified maturities and analyze the overall trend observed during the time period.
+>
+> 3.  Compute the correlations between yields of different maturities and examine their relationships.
+
+```{r}
+library(tidyverse)
+library(Quandl)
+library(resample)
+library(GGally)
+
+yc <- Quandl("USTREASURY/YIELD") 
+yc.xts <- as.xts(yc)
+yc.diff <- zoo(diff(coredata(yc.xts)), order.by=time(yc.xts)[-1])
+yc.diff <- yc.diff[,3:11]
+yc.period1 <- window(yc.diff, start=as.Date("2010-01-01"), end=as.Date("2019-12-31"))
+
+yc.period1.mean <- colMeans(yc.period1)
+yc.period1.sd <- colStdevs(yc.period1)
+yc.table <- data.frame(daily.mean = yc.period1.mean, daily.sd = yc.period1.sd)
+yc.table <- rownames_to_column(yc.table, var = "YTM")
+yc.table[1:9,]
+
+yc.tb.tidy <- pivot_longer(yc.table, cols = -YTM, names_to = "stat", names_prefix = "daily.", values_to = "values")
+yc.tb.tidy$YTM <- as.factor(yc.tb.tidy$YTM)
+yc.tb.tidy$stat <- as.factor(yc.tb.tidy$stat)
+yc.tb.tidy %>% ggplot(aes(x = YTM, y = values, fill = YTM)) + 
+  geom_bar(stat = "identity") +
+  facet_grid(cols = vars(stat)) + 
+  labs(title = "US Treasury Yield Changes", x = " ", y = " ")
+
+yc.period1.cor <- cor(yc.period1)
+round(yc.period1.cor, digits = 3)
+ggpairs(yc.period1[, 1:9])
+```
+
+### Principal Component Analysis
+
+Principal Component Analysis (PCA), widely used in factor modeling, summarizes the structure of high-dimensional data using principal component factors. Mathematically, PCA aims to identify principal components that capture the maximum variance in the data. To do this, it maximizes the eigenvalues derived from the covariance matrix of data. These eigenvalues represent variances along the principal component directions, which align with the directions of maximum variance as determined by their corresponding eigenvectors. The original data is then transformed into this new coordinate system, reducing dimensionality from the original variables to principal components.
+
+Here is a summary of key terminology and concepts in PCA.
+
+-   An eigenvalue $\lambda$ of covariance matrix $A$ correspond to an eigenvector $\mathbb{x}$ if $A\mathbb{x}= \lambda \mathbb{x}$, where there is a non-zero vector $\mathbb{x}$.
+
+-   Principal components are linear combinations of the original variables with weights given by eigenvectors. They are uncorrelated with one another, capturing different variance sources within the data.
+
+-   Variance explained measures the proportion of total variance captured by specific principal components, typically as a percentage. A scree plot visualizes the variance using descending eigenvalues, revealing a steep drop and then levels off. This helps us select the optimal number of components to keep in our analysis.
+
+-   Factor loadings are coefficients indicating the contribution of each original variable to a specific principal component, with high absolute factor loadings indicating strong influence.
+
+> 1.  Compute the covariance matrix of daily yield differences for the specified maturities during the time period. Calculate the eigenvalue and eigenvector of the covariance matrix.
+>
+> 2.  Perform the PCA method on the covariance matrix, extract principal components of the US Treasury yields, and report the results of PCA including factor loading and variance explained.
+>
+> 3.  Using a scree plot, determine the optimal number of principal components to retain. What is the variance explained by the retained components?
+
+```{r}
+yc.period1.cov <- cov(yc.period1)
+ed <- eigen(yc.period1.cov)
+ed$values
+sqrt(ed$values)
+ed$vectors
+yc.pca <-princomp(coredata(yc.period1))
+summary(yc.pca)
+screeplot(yc.pca)
+```
+
+### Interpreting Factors and Comparing with Nelson-Siegel Model
+
+Principal components represent different parts of the yield curves, such as short-term, medium-term, and long-term maturities. For example, the first component shows overall yield rate changes, while the second focuses on shifts on the curve's slope. Bar plots of factor loadings help us grasp how each original variable contributes to these components, making it easier to understand. High loadings on specific maturities might reflect well-known economic factors.
+
+The Nelson-Siegel model is a common parametric model for yield curves, with specific shape parameters such as level, slope and curvature. Level parameter represents long-term rates, slope parameter captures short-to-long-term differences, and curvature parameter deals with shape changes over time. In contrast, principal components provide a data-driven view of yield curves. Examining how principal components relate to Nelson-Siegel parameters is useful for model validation, model selection, and interpretation.
+
+> 1.  Plot bar plots of factor loadings for the first three principal components.
+> 2.  Interpret the first three principal components based on factor loadings, and compare these findings with the Nelson-Siegel model.
+
+```{r}
+round(yc.pca$loadings[,1:9],digits=4)
+barplot(yc.pca$loadings[,1], main="Loadings: PC1")
+barplot(yc.pca$loadings[,2], main="Loadings: PC2")
+barplot(yc.pca$loadings[,3], main="Loadings: PC3")
+round(cor(yc.pca$scores))
+```
+
+### References
+
+Alexander, Carol. 2001. *Market Models : A Guide to Financial Data Analysis*. Chichester UK: Wiley.
+
+Kempthorne, Peter. 2013. "Case Study: Factor Modeling." October 28. <https://ocw.mit.edu/courses/18-s096-topics-in-mathematics-with-applications-in-finance-fall-2013/3f158673e3188faeb6cffa71ecb9d254_MIT18_S096F13_CaseStudy7.pdf>.

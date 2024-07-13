@@ -1,0 +1,134 @@
+---
+title: "Project 1: US Treasury Yield Curve Analysis"
+author: ""
+date: ""
+format: html
+editor: visual
+execute:
+  warning: false
+---
+
+### Learning Objectives
+
+1.  Apply the Nelson-Siegel Model to estimate U.S. Treasury yield curves.
+
+2.  Classify and illustrate different shapes found in yield curves.
+
+3.  Analyze and interpret yield curve shapes for economic recession forecasting.
+
+### Yield Rates of US Treasuries
+
+The U.S. Treasury employs the following formula to calculate yield rates for its bonds based on their remaining years until maturity:
+
+$$
+P(\tau) = e^{-y(\tau)\tau}
+$$
+
+$P$ is the price of a zero-coupon bond, $\tau$ is the bond's maturity in years, and $y$ is the bond's yield rate. Treasury bills are considered short-term bonds, having maturities of one year or less, whereas Treasury notes and bonds are classified as mid to long-term bonds with maturities from two to 30 years.
+
+The behavior of yield rates differs across various bond maturities, and a yield curve offers a graphical depiction of these variations. The U.S. Treasury yield rates are often seen as the base interest rates, and the yield curve is widely used as an indicator of investor sentiment regarding the overall economic outlook.
+
+> 1.  Load the U.S. Treasury yield rate time-series from Quandl.
+>
+>     [Note]{.underline}. Quandl, referred to as Nasdaq's data link, is a platform that provides access to a wide range of economic, financial, and alternative data.
+>
+> 2.  Plot the U.S. Treasury yield rates for maturities of 6 months, 1 year, 5 years, 10 years, and 30 years over the time period of 1990-2023.
+>
+> 3.  Evaluate the plot to identify trends over several specific time periods of interest, compare short-term and long-term yield rates, and explore historical economic connections.
+
+```{r}
+library(tidyverse)
+library(Quandl)
+
+# Load US Treasury daily yield rates
+yc <- Quandl("USTREASURY/YIELD") 
+yc.tbl <- as_tibble(yc)
+head(yc.tbl)
+summary(yc.tbl)
+
+tidy_yc <- pivot_longer(yc.tbl, cols = -Date, names_to = "YTM", values_to = "Yield")
+tidy_yc$Date <-as.POSIXct(tidy_yc$Date)
+tidy_yc$YTM  <- factor(tidy_yc$YTM , levels=c("1 MO", "2 MO", "3 MO", "6 MO", "1 YR", "2 YR", "3 YR", "5 YR", "7 YR", "10 YR", "20 YR", "30 YR"))
+
+# Subset and plot data
+tidy_yc %>% filter(YTM %in% c("6 MO", "1 YR", "5 YR", "10 YR", "30 YR"), Date > "2004-01-01", Date < "2009-12-31") %>%
+            ggplot(aes(x = Date, y = Yield, group = YTM)) +
+            geom_line(aes(col = YTM)) +
+            xlab("Year") +
+            ylab("Yield (%)") + 
+scale_colour_manual(values=c("6 MO"="red", "1 YR"="magenta", "5 YR"="skyblue", "10 YR"="limegreen", "30 YR"="olivedrab"), labels=c("6 MO", "1 YR", "5 YR", "10 YR", "30 YR")) 
+
+tidy_yc %>% filter(YTM %in% c("6 MO", "1 YR", "5 YR", "10 YR", "30 YR"), Date > "2018-01-01") %>%
+  ggplot(aes(x = Date, y = Yield, group = YTM)) +
+  geom_line(aes(col = YTM)) +
+  xlab("Year") +
+  ylab("Yield (%)")
+```
+
+### Estimating Yield Curves
+
+The yield curve is a graph that plots the cross sectional relationship between U.S. Treasury yield rates and their corresponding maturities, all at a specific point in time. The yield curve presents challenges such as the inability to directly observe yields and the limitation of having only a limited number of yields obtainable across various maturities. As a result, generating a smooth yield curve involves employing an estimation approach. In this context, we employ the widely utilized the Nelson-Siegel model (1987) from finance to construct the yield curves.
+
+The Nelson-Siegel model employs a mathematical equation given below for a forward rate with parameters $\beta_0, \beta_1, \beta_2$, and shape parameter $\lambda$ to fit the data:
+
+$$
+f(\tau) =\beta_0+\beta_1 e^{-\lambda\tau}+\beta_2\lambda\tau e^{-\lambda\tau}
+$$
+
+This equation consists of three components: a constant, an exponential decay function, and a Laguerre function. Each component captures factors such as the long-term interest rate, short-term interest slope, and mid-term interest curvature, in that order. Based on the relationship specified in $y(\tau)=\frac{1}{\tau}\int_0^{\tau} f(t)\, dt$ between the yield rate and forward rate, the corresponding Nelson-Siegel yield curve is obtained:
+
+$$
+y(\tau) =\beta_0+\beta_1\left(\frac{1- e^{-\lambda\tau}}{\lambda\tau}\right)+\beta_2\left(\frac{1- e^{-\lambda\tau}}{\lambda\tau} - e^{-\lambda\tau}\right)
+$$
+
+In order to obtain the Nelson-Siegel model's parameters, we use the `Nelson.Siegel` command provided by the R package `YieldCurve`. The command applies nonlinear optimization techniques to estimate the parameters, with the objective of minimizing the difference between the yield rates predicted by the model and the actual observed rates.
+
+> 1.  Compute the yield curves for U.S. Treasury bonds applying the Nelson-Siegel model over the period from 2022 to 2023.
+>
+> 2.  Generate plots that illustrate the comparison between the actual yield curves of U.S. Treasury bonds and the fitted curves of the Nelson-Siegel model spanning a range of maturities, from 1 month to 30 years, on several distinct dates.
+>
+> 3.  Evaluate the Nelson-Siegel model's goodness of fit to the Treasury yield data.
+
+```{r}
+library(YieldCurve)
+library(xts)
+#library(data.table)
+
+# Fitting yield curve with Nelson-Siegel model
+yc.xts <- as.xts(yc)
+yield <- window(yc.xts, start = "2022-1-02", end = "2023-8-02")
+maturity.yc <- c(1/12, 2/12, 0.25, 0.5, 1, 2, 3, 5, 7, 10, 20, 30)
+NSParameters <- Nelson.Siegel(rate = yield,	maturity = maturity.yc)
+
+y <- as.data.frame(NSrates(NSParameters[c(20, 225, 350),], maturity.yc)) %>%   tibble::rownames_to_column("date")
+yc.yield <- as.data.frame(yield[c(20, 225, 350),]) %>% tibble::rownames_to_column("date")
+colnames(yc.yield) <- c(colnames(y)) 
+yc.df <- dplyr::bind_rows(list(observed = yc.yield, fitted = y), .id = "source") 
+yc_tidy <- pivot_longer(yc.df, -c(1,2), names_to = "maturity", names_prefix = "X", names_transform = list(maturity = as.numeric), values_to = "yield")
+
+plot <- yc_tidy %>% ggplot(aes(x = maturity, y = yield) ) +
+  geom_line(aes(col = source)) +
+  geom_point(aes(col = source)) +
+  facet_grid(rows = vars(date)) +
+  labs(title="Yield Curve Shapes", x = "Maturity (years)", y = "Yield (%)") + 
+  ylim(0, 6)
+plot
+```
+
+### Yield Curve Shape and Recession Relationship
+
+Yield curves have three main shapes, including upward-sloping (normal), downward-sloping (inverted), or flat. The relationship between short-term and long-term interest rates reveals the various yield curve shapes. An upward-sloping curve, or "normal," indicates optimism, as long-term rates exceed short-term rates. A downward-sloping curve, or "inverted," signals uncertainty and potential recession, with short-term rates surpassing long-term rates. A flat curve occurs during transitional phases.
+
+Historical data links economic recessions to inverted yield curves. A 2018 study by the San Francisco Fed showed that, except for one case, all nine recessions since 1955 were preceded by an inverted yield curve. This underscores how yield curve shapes offer insights into future interest rates and economic prospects, assisting investors and policymakers in understanding the current economic conditions.
+
+> 1.  Plot the yield curves for U.S. Treasury bonds on the following dates: January 31, 2022, November 25, 2022, and May 25, 2023. Determine the different shapes of yield curves and assess the significance of the relation between short-term and long-term interest rates from each curve shape.
+>
+> 2.  Identify U.S. economic recessions starting from 1955 and examine yield curves during the recessions that have occurred since 1990.
+
+### Reference
+
+Bauer and Mertens, Economic Forecasts with the Yield Curve, FRBSF Economic Letter, Federal Reserve Bank of San Francisco (2018).
+
+Nelson and Siegel, Parsimonious Modeling of Yield Curves, Journal of Business, vol. 60 (1987).
+
+Veronesi, Fixed income securities: Valuation, risk, and risk management, Hoboken, N.J: Wiley, 2010.
