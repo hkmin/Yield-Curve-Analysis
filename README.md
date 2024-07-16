@@ -1,1 +1,1 @@
-This study features three projects within the SOA Exam FM curriculum, focusing on U.S. Treasury yield rate time series analysis. These projects utilize curve fitting, binary classification, and factor analysis, implemented in R Quarto documents.
+This study features three projects related to the SOA Exam FM curriculum, focusing on U.S. Treasury yield rate time series analysis. These projects utilize curve fitting, binary classification, and PCA techniques, implemented in R Quarto documents.
